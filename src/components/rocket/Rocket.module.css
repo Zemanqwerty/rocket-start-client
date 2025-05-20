@@ -75,7 +75,7 @@ audio {
 }
 
 .rocketContainer.launch {
-    animation: rocketLaunch 12s ease-in forwards;
+    animation: rocketLaunch 8s ease-in forwards;
 }
 
 .videoOverlay {
