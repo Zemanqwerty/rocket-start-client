@@ -14,19 +14,76 @@ const Rocket: React.FC = () => {
   const [squares, setSquares] = useState<Array<string>>(Array(5).fill('black'));
   const [isLaunching, setIsLaunching] = useState(false);
   const [showVideo, setShowVideo] = useState(false);
+  const [hasFirstEngineStarted, setHasFirstEngineStarted] = useState(false);
+  
   const rocketRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-
-  const [hasFirstEngineStarted, setHasFirstEngineStarted] = useState(false);
   const firstEngineSoundRef = useRef<HTMLAudioElement>(null);
   const engineSoundRef = useRef<HTMLAudioElement>(null);
   const launchSoundRef = useRef<HTMLAudioElement>(null);
+  const activeSounds = useRef<Set<HTMLAudioElement>>(new Set());
+
+  const playSound = (soundUrl: string, loop = false) => {
+    const audio = new Audio(soundUrl);
+    audio.preload = 'auto';
+    audio.loop = loop;
+    
+    audio.play()
+      .then(() => {
+        activeSounds.current.add(audio);
+        audio.onended = () => activeSounds.current.delete(audio);
+      })
+      .catch(e => console.error("Audio play failed:", e));
+  };
+
+  const stopAllSounds = () => {
+    activeSounds.current.forEach(audio => {
+      const fadeAudio = setInterval(() => {
+        if (audio.volume > 0.1) {
+          audio.volume -= 0.1;
+        } else {
+          clearInterval(fadeAudio);
+          audio.pause();
+          audio.currentTime = 0;
+          audio.volume = 1;
+        }
+      }, 100);
+    });
+    activeSounds.current.clear();
+  };
 
   useEffect(() => {
-    if (isLaunching) {
-      // Останавливаем все звуки двигателей
+    if (squares.every(color => color === 'red')) {
+      const timer = setTimeout(() => {
+        setIsLaunching(true);
+      }, 5000);
+
+      stopAllSounds();
+      playSound(soundLaunch);
       
+      return () => clearTimeout(timer);
     }
+  }, [squares]);
+
+  useEffect(() => {
+    const rocket = rocketRef.current;
+    if (!rocket) return;
+
+    const handleAnimationEnd = () => {
+      stopAllSounds();
+      setShowVideo(true);
+      setTimeout(() => {
+        videoRef.current?.play().catch(e => console.error("Video play failed:", e));
+      }, 100);
+    };
+
+    if (isLaunching) {
+      rocket.addEventListener('animationend', handleAnimationEnd);
+    }
+
+    return () => {
+      rocket.removeEventListener('animationend', handleAnimationEnd);
+    };
   }, [isLaunching]);
 
   useEffect(() => {
@@ -35,18 +92,14 @@ const Rocket: React.FC = () => {
         const newSquares = [...prev];
         newSquares[data.index] = 'red';
         
-        // Проверяем, есть ли хотя бы один активный двигатель
         const hasAnyEngineActive = newSquares.some(color => color === 'red');
         
         if (hasAnyEngineActive) {
-          // Если это первый запуск двигателя
           if (!hasFirstEngineStarted && newSquares.filter(c => c === 'red').length === 1) {
             setHasFirstEngineStarted(true);
-            firstEngineSoundRef.current?.play().catch(e => console.error("Audio play failed:", e));
-          } 
-          // Для всех последующих двигателей
-          else {
-            engineSoundRef.current?.play().catch(e => console.error("Engine sound failed:", e));
+            playSound(soundFirstEngine, true);
+          } else {
+            playSound(soundEngine);
           }
         }
         
@@ -87,82 +140,32 @@ const Rocket: React.FC = () => {
       height: '50px',
       display: 'inline-block',
       transformOrigin: 'center bottom',
-      // Убрали transition из базового стиля
     };
 
     if (!isActive) {
       return {
         ...baseStyle,
         transform: 'translateY(0) scale(1)',
-        transition: 'all 1.5s ease-out' // Плавное возвращение в исходное состояние
+        transition: 'all 1.5s ease-out'
       };
     }
 
     return {
       ...baseStyle,
-      // Начальное состояние теперь совпадает с анимацией
       transform: isOdd ? 'translateY(104px) scale(2)' : 'translateY(35px) scale(1)',
-      transition: 'all 1.5s ease-out', // Плавное изменение к активному состоянию
+      transition: 'all 1.5s ease-out',
       animation: `${isOdd ? styles.engineFire : styles.engineFireEven} 1s infinite alternate ease-in-out`,
-      animationDelay: '1.5s' // Начинаем покачивание после завершения основного движения
+      animationDelay: '1.5s'
     };
   };
 
-  useEffect(() => {
-    if (squares.every(color => color === 'red')) {
-      const timer = setTimeout(() => {
-        setIsLaunching(true);
-      }, 16000);
-
-      firstEngineSoundRef.current?.pause();
-      engineSoundRef.current?.pause();
-        
-      // Запускаем звук взлета
-      launchSoundRef.current?.play().catch(e => console.error("Launch sound failed:", e));
-      
-      return () => clearTimeout(timer);
-    }
-  }, [squares]);
-
-  useEffect(() => {
-    const rocket = rocketRef.current;
-    if (!rocket) return;
-
-    const handleAnimationEnd = () => {
-      setShowVideo(true);
-      setTimeout(() => {
-        videoRef.current?.play().catch(e => console.error("Video play failed:", e));
-      }, 100);
-    };
-
-    if (isLaunching) {
-      rocket.addEventListener('animationend', handleAnimationEnd);
-    }
-
-    return () => {
-      rocket.removeEventListener('animationend', handleAnimationEnd);
-    };
-  }, [isLaunching]);
-
-  useEffect(() => {
-    socket.on('squareUpdate', (data: { index: number }) => {
-      setSquares(prev => {
-        const newSquares = [...prev];
-        newSquares[data.index] = 'red';
-        return newSquares;
-      });
-    });
-
-    return () => {
-      socket.off('squareUpdate');
-    };
-  }, []);
-
   return (
     <div className={styles.area} style={areaStyles}>
-      <audio ref={firstEngineSoundRef} src={soundFirstEngine} preload="auto" loop/>
+      {/* Аудио элементы остаются для предзагрузки */}
+      <audio ref={firstEngineSoundRef} src={soundFirstEngine} preload="auto" />
       <audio ref={engineSoundRef} src={soundEngine} preload="auto" />
       <audio ref={launchSoundRef} src={soundLaunch} preload="auto" />
+      
       <div 
         ref={rocketRef}
         className={`${styles.rocketContainer} ${isLaunching ? styles.launch : ''}`}
