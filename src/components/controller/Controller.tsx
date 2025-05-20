@@ -34,7 +34,7 @@ const Controller: React.FC = () => {
             onClick={() => handleClick(index)}
             className={styles.controlBtn}
           >
-            ⏻
+            {index + 1}
           </button>
         ))}
       </div>
